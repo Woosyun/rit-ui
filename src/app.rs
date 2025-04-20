@@ -7,7 +7,7 @@ use leptos::{
 use wasm_bindgen::prelude::*;
 use std::{
     path::PathBuf,
-    collections::HashSet,
+    //collections::HashSet,
 };
 
 #[wasm_bindgen]
@@ -24,6 +24,7 @@ pub fn App() -> impl IntoView {
     let (wd, set_wd) = signal(None::<PathBuf>);
 
     view! {
+        <div id="app">
         <Show
             when=move || !wd.get().is_none()
             fallback=move || view! {
@@ -32,6 +33,7 @@ pub fn App() -> impl IntoView {
         >
             <MainPage />
         </Show>
+        </div>
     }
 }
 
@@ -52,13 +54,14 @@ pub fn WorkingDirectorySelectionPage(
     };
 
     view! {
-        <h1>"Select Working Directory"</h1>
-        //todo: recent history
-        <form on:submit=open_explorer>
-            <button type="submit">
-                "search folder"
-            </button>
-        </form>
+        <div class="select-page">
+            //todo: recent history
+            <form on:submit=open_explorer>
+                <button type="submit" class="select-button">
+                    "search folder"
+                </button>
+            </form>
+        </div>
     }
 }
 
@@ -70,20 +73,54 @@ pub fn MainPage() -> impl IntoView {
     }
 }
 
-#[component]
+use crate::entry::{Entry, EntryStatus};
+
+#[component] 
 pub fn Sidebar() -> impl IntoView {
-    let _rev = LocalResource::new(move || {
-        invoke_without_argument("read_workspace")
+    let (ws, set_ws) = signal(Vec::<Entry>::new());
+    Effect::new(move || {
+        spawn_local(async move {
+            let res = invoke_without_argument("read_workspace").await;
+            let res = serde_wasm_bindgen::from_value::<Vec<Entry>>(res)
+                .map_err(|e| e.to_string());
+            if let Ok(ws) = res {
+                set_ws.set(ws);
+            }
+        });
     });
+    let render_entry = move |entry: Entry| {
+        let class_name = match entry.status {
+            EntryStatus::Added => "file-item added-file",
+            EntryStatus::Modified => "file-item modified-file",
+            EntryStatus::NotChanged => "file-item"
+        };
+        let path = entry.path
+            .to_str().unwrap()
+            .to_string();
+        view! {
+            <p class=class_name>
+                {path}
+            </p>
+        }
+    };
 
     view! {
-        <h1>"Sidebar"</h1>
+        <div class="sidebar">
+        {move || {
+            let ws = ws.get();
+            ws.into_iter()
+                .map(render_entry)
+                .collect_view()
+        }}
+        </div>
     }
 }
 
 #[component]
 pub fn HistoryPage() -> impl IntoView {
     view! {
-        <h1>"History Page"</h1>
+        <div class="main">
+            <h1>"History Page"</h1>
+        </div>
     }
 }

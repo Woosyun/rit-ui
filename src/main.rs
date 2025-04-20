@@ -1,4 +1,5 @@
 mod app;
+mod entry;
 
 use app::*;
 use leptos::prelude::*;

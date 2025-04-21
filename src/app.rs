@@ -1,6 +1,6 @@
 use leptos::task::spawn_local;
 use leptos::{
-    ev::SubmitEvent,
+    ev::{SubmitEvent, MouseEvent},
     prelude::*
 };
 //use serde::{Deserialize, Serialize};
@@ -67,9 +67,43 @@ pub fn WorkingDirectorySelectionPage(
 
 #[component] 
 pub fn MainPage() -> impl IntoView {
+    let (init, set_init) = signal(false);
+    Effect::new(move || {
+        spawn_local(async move {
+            let res = invoke_without_argument("is_repository_initialized").await;
+            let res = serde_wasm_bindgen::from_value::<bool>(res).unwrap();
+            set_init.set(res);
+        });
+    });
+
     view! {
-        <Sidebar />
-        <HistoryPage />
+        <Show
+            when=move || init.get()
+            fallback=move || view! {
+                <UninitializedPage set_init=set_init/>
+            }
+        >
+            <Sidebar />
+            <HistoryPage />
+        </Show>
+    }
+}
+#[component] 
+pub fn UninitializedPage(set_init: WriteSignal<bool>) -> impl IntoView {
+    let on_click = move |ev: MouseEvent| {
+        ev.prevent_default();
+
+        spawn_local(async move {
+            let _ = invoke_without_argument("initialize_repository").await;
+
+            set_init.set(true);
+        });
+    };
+    
+    view! {
+        <button on:click=on_click>
+            "initalize repository"
+        </button>
     }
 }
 

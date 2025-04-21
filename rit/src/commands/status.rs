@@ -37,4 +37,41 @@ impl Status {
 
         prev_rev.into_rev()
     }
+    /// read working directory and report status about its repository
+    pub fn scan(wd: PathBuf) -> Result<RepositoryStatus> {
+        let mut path = wd.clone();
+        if !path.exists() {
+            return Ok(RepositoryStatus::InvalidPath);
+        }
+        path.push(Repository::name());
+        if !path.exists() {
+            return Ok(RepositoryStatus::NotFound);
+        }
+
+        let ws = Workspace::build(wd)?;
+        let repo = Repository::build(&ws)?;
+        let head = repo.local_head.get()?;
+        if !head.is_branch() {
+            return Ok(RepositoryStatus::NotBranch);
+        }
+
+        Ok(RepositoryStatus::Normal)
+    }
+}
+
+pub enum RepositoryStatus {
+    InvalidPath,
+    NotFound,
+    NotBranch,
+    Normal
+}
+impl RepositoryStatus {
+    pub fn is_repository_initialized(&self) -> bool {
+        use RepositoryStatus::*;
+        match self {
+            InvalidPath => false,
+            NotFound => false,
+            _ => true,
+        }
+    }
 }

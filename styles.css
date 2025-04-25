@@ -31,6 +31,8 @@ body, html {
 
 /* Main area for graph rendering */
 .main {
+  width: full;
+  height: full;
   flex: 1;
   background-color: #1e1e1e;
   display: flex;

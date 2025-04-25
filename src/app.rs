@@ -1,13 +1,15 @@
+mod graph;
+
 use leptos::task::spawn_local;
 use leptos::{
     ev::{SubmitEvent, MouseEvent},
     prelude::*
 };
-//use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use std::{
     path::PathBuf,
-    //collections::HashSet,
+    collections::{HashSet, HashMap},
 };
 
 #[wasm_bindgen]
@@ -107,8 +109,17 @@ pub fn UninitializedPage(set_init: WriteSignal<bool>) -> impl IntoView {
     }
 }
 
-use crate::entry::{Entry, EntryStatus};
-
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Entry {
+    pub path: PathBuf,
+    pub status: EntryStatus,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum EntryStatus {
+    Added,
+    Modified,
+    NotChanged,
+}
 #[component] 
 pub fn Sidebar() -> impl IntoView {
     let (ws, set_ws) = signal(Vec::<Entry>::new());
@@ -150,11 +161,34 @@ pub fn Sidebar() -> impl IntoView {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct History(pub HashMap<String, Commit>);
+impl History {
+    fn new() -> Self {
+        History(HashMap::new())
+    }
+}
+#[derive(Serialize, Deserialize)]
+pub struct Commit {
+    pub parents: HashSet<String>,
+    pub children: HashSet<String>,
+}
+
 #[component]
 pub fn HistoryPage() -> impl IntoView {
+    let (history, set_history) = signal(History::new());
+    Effect::new(move || {
+        spawn_local(async move {
+            let res = invoke_without_argument("read_entire_history").await;
+            let res: History = serde_wasm_bindgen::from_value(res)
+                .expect("cannot parse response");
+            set_history.set(res);
+        });
+    });
+
     view! {
         <div class="main">
-            <h1>"History Page"</h1>
+            <graph::RenderGraph history=history />
         </div>
     }
 }

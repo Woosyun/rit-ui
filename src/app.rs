@@ -73,8 +73,9 @@ pub fn MainPage() -> impl IntoView {
     Effect::new(move || {
         spawn_local(async move {
             let res = invoke_without_argument("is_repository_initialized").await;
-            let res = serde_wasm_bindgen::from_value::<bool>(res).unwrap();
-            set_init.set(res);
+            if let Ok(init) = serde_wasm_bindgen::from_value::<bool>(res) {
+                set_init.set(init);
+            }
         });
     });
 
@@ -161,14 +162,14 @@ pub fn Sidebar() -> impl IntoView {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct History(pub HashMap<String, Commit>);
 impl History {
     fn new() -> Self {
         History(HashMap::new())
     }
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Commit {
     pub parents: HashSet<String>,
     pub children: HashSet<String>,
@@ -185,10 +186,26 @@ pub fn HistoryPage() -> impl IntoView {
             set_history.set(res);
         });
     });
+    let (head, set_head) = signal(String::new());
+    Effect::new(move || {
+        spawn_local(async move {
+            let res = invoke_without_argument("get_head").await;
+            let res: String = serde_wasm_bindgen::from_value(res)
+                .expect("failed getting head");
+            set_head.set(res);
+        });
+    });
 
     view! {
         <div class="main">
-            <graph::RenderGraph history=history />
+        {move || {
+            let head = head.get();
+            let history = history.get();
+
+            view! {
+                <graph::RenderGraph history=history head=head />
+            }
+        }}
         </div>
     }
 }

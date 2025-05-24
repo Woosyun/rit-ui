@@ -50,11 +50,17 @@ pub async fn read_entire_history(wd: tauri::State<'_, Mutex<WorkingDirectory>>) 
 
     for branch in cmd_branch.list()? {
         let mut current = Some(cmd_log.node(&branch)?);
+        history.insert(branch, Commit{
+            parents: HashSet::new(),
+            children: HashSet::new(),
+        });
 
-        while let Some(mut node) = current {
-            let commit = node.commit();
+        for node in current {
+            if history.get(node.oid()).is_some() {
+                break;
+            }
 
-            if let Some(parent_oid) = commit.parent() {
+            if let Some(parent_oid) = node.commit().parent() {
                 let parent_oid = parent_oid.to_string();
                 let child_oid = node.oid().to_string();
 
@@ -74,8 +80,6 @@ pub async fn read_entire_history(wd: tauri::State<'_, Mutex<WorkingDirectory>>) 
                     })
                     .parents.insert(parent_oid);
             }
-
-            current = node.next();
         }
     }
 

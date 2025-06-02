@@ -30,11 +30,6 @@ pub async fn set_working_directory(app: tauri::AppHandle) -> Option<PathBuf> {
     cwd.0.clone()
 }
 
-use rit::{
-    self,
-    commands,
-};
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Entry {
     path: PathBuf,
@@ -57,24 +52,24 @@ pub enum EntryStatus {
 
 #[tauri::command] 
 pub async fn read_workspace(wd: tauri::State::<'_, Mutex<WorkingDirectory>>) -> rit::Result<Vec<Entry>> {
+    use rit::prelude::*;
+
     let wd = wd.lock().unwrap();
     let wd = (*wd).0.clone().unwrap();
-    let status = commands::Status::build(wd)?;
-        //.map_err(|e| e.to_string())?;
 
-    let ws_rev = status.scan_workspace()?;
-    //    .map_err(|e| e.to_string())?;
-    let head_rev = status.scan_head()?;
-        //.map_err(|e| e.to_string())?;
+    let ws = Workspace::build(wd)?;
+    let ws_rev = ws.into_rev()?;
+    let repo_rev = Repository::build(&ws)?
+        .into_rev()?;
 
-    let rev_diff = head_rev.diff(&ws_rev)?;
+    let rev_diff = repo_rev.diff(&ws_rev)?;
         //.map_err(|e| e.to_string())?;
 
     let ws = ws_rev.0.into_iter()
         .map(|(index, _)| {
-            let entry = if rev_diff.added.get(&index).is_some() {
+            let entry = if rev_diff.added.contains(&index) {
                 Entry::new(index, EntryStatus::Added)
-            } else if rev_diff.modified.get(&index).is_some() {
+            } else if rev_diff.modified.contains(&index) {
                 Entry::new(index, EntryStatus::Modified)
             } else {
                 Entry::new(index, EntryStatus::NotChanged)

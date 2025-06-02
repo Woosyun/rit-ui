@@ -14,6 +14,7 @@ pub fn run() {
             repo::is_repository_initialized,
             repo::initialize_repository,
             repo::read_entire_history,
+            repo::get_head,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

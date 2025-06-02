@@ -74,7 +74,10 @@ pub fn MainPage() -> impl IntoView {
         spawn_local(async move {
             let res = invoke_without_argument("is_repository_initialized").await;
             if let Ok(init) = serde_wasm_bindgen::from_value::<bool>(res) {
+                println!("invoked is_repository_initialized: {}", init);
                 set_init.set(init);
+            } else {
+                println!("somthing wrong with invoking");
             }
         });
     });
@@ -186,11 +189,11 @@ pub fn HistoryPage() -> impl IntoView {
             set_history.set(res);
         });
     });
-    let (head, set_head) = signal(String::new());
+    let (head, set_head) = signal(None);
     Effect::new(move || {
         spawn_local(async move {
             let res = invoke_without_argument("get_head").await;
-            let res: String = serde_wasm_bindgen::from_value(res)
+            let res: Option<String> = serde_wasm_bindgen::from_value(res)
                 .expect("failed getting head");
             set_head.set(res);
         });

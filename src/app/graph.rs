@@ -75,10 +75,16 @@ fn render_graph(graph: &Graph) -> impl IntoView {
 #[component]
 pub fn RenderGraph(
     history: History,
-    head: String,
+    head: Option<String>,
 ) -> impl IntoView {
     let make_graph = move || {
         let mut graph = Graph::new();
+        let head = head.clone();
+        let head = if head.is_some() {
+            head.unwrap()
+        } else {
+            return graph;
+        };
         //head
         let current_commit = history.0.get(&head).unwrap();
         let current_node = Node::new(100.0, 300.0);

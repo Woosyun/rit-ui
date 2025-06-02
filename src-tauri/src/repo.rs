@@ -14,8 +14,9 @@ pub async fn is_repository_initialized(wd: tauri::State<'_, Mutex<WorkingDirecto
     let wd = wd.lock().unwrap();
     let wd = (*wd).0.clone().unwrap();
 
-    let status = commands::Status::scan(wd)?;
-    Ok(status.is_repository_initialized())
+    let repo_status = rit::commands::Status::build(wd)?
+        .repository_status();
+    Ok(repo_status.is_repository_initialized())
 }
 
 #[tauri::command] 
@@ -28,10 +29,10 @@ pub async fn initialize_repository(wd: tauri::State<'_, Mutex<WorkingDirectory>>
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct History(HashMap<String, Commit>);
+pub struct History(HashMap<String, Revision>);
 
 #[derive(Serialize, Deserialize)]
-struct Commit {
+struct Revision {
     parents: HashSet<String>,
     children: HashSet<String>,
 }
@@ -42,31 +43,31 @@ pub async fn read_entire_history(wd: tauri::State<'_, Mutex<WorkingDirectory>>) 
         let wd_lock = wd.lock().unwrap();
         (*wd_lock).0.clone().unwrap()
     };
-
-    let cmd_branch = commands::Branch::build(wd.clone())?;
-    let cmd_log = commands::Log::build(wd)?;
+    let log = commands::Log::build(wd)?;
 
     let mut history = HashMap::new();
 
-    for branch in cmd_branch.list()? {
-        let mut current = Some(cmd_log.node(&branch)?);
-        history.insert(branch, Commit{
+    for leaf_node in log.read_all_branches()? {
+        if history.contains_key(&leaf_node.oid().to_string()) {
+            continue;
+        }
+        history.insert(leaf_node.oid().to_string(), Revision {
             parents: HashSet::new(),
             children: HashSet::new(),
         });
 
-        for node in current {
-            if history.get(node.oid()).is_some() {
+        for node in leaf_node {
+            let child_oid = node.oid().to_string();
+            if history.contains_key(&child_oid) {
                 break;
             }
 
             if let Some(parent_oid) = node.commit().parent() {
                 let parent_oid = parent_oid.to_string();
-                let child_oid = node.oid().to_string();
 
                 history
                     .entry(parent_oid.clone())
-                    .or_insert_with(|| Commit {
+                    .or_insert_with(|| Revision {
                         parents: HashSet::new(),
                         children: HashSet::new(),
                     })
@@ -74,7 +75,7 @@ pub async fn read_entire_history(wd: tauri::State<'_, Mutex<WorkingDirectory>>) 
 
                 history
                     .entry(child_oid)
-                    .or_insert_with(|| Commit {
+                    .or_insert_with(|| Revision {
                         parents: HashSet::new(),
                         children: HashSet::new(),
                     })
@@ -83,6 +84,24 @@ pub async fn read_entire_history(wd: tauri::State<'_, Mutex<WorkingDirectory>>) 
         }
     }
 
-    let history = History(history);
-    Ok(history)
+    Ok(History(history))
+}
+
+#[tauri::command]
+pub async fn get_head(wd: tauri::State<'_, Mutex<WorkingDirectory>>) -> rit::Result<Option<String>> {
+    let wd = {
+        let wd_lock = wd.lock().unwrap();
+        (*wd_lock).0.clone().unwrap()
+    };
+    let ws = rit::workspace::Workspace::build(wd)?;
+    let repo = rit::repository::Repository::build(&ws)?;
+    let head = repo.local_head.get()?;
+    let branch = head.branch()?;
+    let oid = if repo.refs.contains(branch) {
+        Some(repo.refs.get(branch)?.to_string())
+    } else {
+        None
+    };
+
+    Ok(oid)
 }

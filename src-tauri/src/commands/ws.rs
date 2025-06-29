@@ -2,13 +2,11 @@ use std::{
     path::PathBuf,
     sync::Mutex,
 };
-use serde::{Serialize, Deserialize};
 use tauri_plugin_dialog::DialogExt;
 use tauri::Manager;
+use crate::WorkingDirectory;
+use serde::{Serialize, Deserialize};
 
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct WorkingDirectory(pub Option<PathBuf>);
 
 #[tauri::command]
 pub async fn set_working_directory(app: tauri::AppHandle) -> Option<PathBuf> {
@@ -51,7 +49,9 @@ pub enum EntryStatus {
 }
 
 #[tauri::command] 
-pub async fn read_workspace(wd: tauri::State::<'_, Mutex<WorkingDirectory>>) -> rit::Result<Vec<Entry>> {
+pub async fn read_workspace(
+    wd: tauri::State::<'_, Mutex<WorkingDirectory>>,
+) -> rit::Result<Vec<Entry>> {
     use rit::prelude::*;
 
     let wd = wd.lock().unwrap();
@@ -65,7 +65,7 @@ pub async fn read_workspace(wd: tauri::State::<'_, Mutex<WorkingDirectory>>) -> 
     let rev_diff = repo_rev.diff(&ws_rev)?;
         //.map_err(|e| e.to_string())?;
 
-    let ws = ws_rev.0.into_iter()
+    let ws = ws_rev.into_iter()
         .map(|(index, _)| {
             let entry = if rev_diff.added.contains(&index) {
                 Entry::new(index, EntryStatus::Added)

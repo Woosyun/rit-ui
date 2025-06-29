@@ -1,4 +1,5 @@
 mod graph;
+use graph::*;
 
 use leptos::task::spawn_local;
 use leptos::{
@@ -7,10 +8,7 @@ use leptos::{
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
-use std::{
-    path::PathBuf,
-    collections::{HashSet, HashMap},
-};
+use std::path::PathBuf;
 
 #[wasm_bindgen]
 extern "C" {
@@ -57,7 +55,6 @@ pub fn WorkingDirectorySelectionPage(
 
     view! {
         <div class="select-page">
-            //todo: recent history
             <form on:submit=open_explorer>
                 <button type="submit" class="select-button">
                     "search folder"
@@ -165,36 +162,28 @@ pub fn Sidebar() -> impl IntoView {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct History(pub HashMap<String, Commit>);
-impl History {
-    fn new() -> Self {
-        History(HashMap::new())
-    }
-}
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Commit {
-    pub parents: HashSet<String>,
-    pub children: HashSet<String>,
-}
-
 #[component]
 pub fn HistoryPage() -> impl IntoView {
-    let (history, set_history) = signal(History::new());
+    use rit::{
+        commands::history::*,
+        prelude::Oid,
+    };
+
+    let (hg, set_hg) = signal(HistoryGraph::new());
     Effect::new(move || {
         spawn_local(async move {
             let res = invoke_without_argument("read_entire_history").await;
-            let res: History = serde_wasm_bindgen::from_value(res)
+            let res: HistoryGraph = serde_wasm_bindgen::from_value(res)
                 .expect("cannot parse response");
-            set_history.set(res);
+            set_hg.set(res);
         });
     });
     let (head, set_head) = signal(None);
     Effect::new(move || {
         spawn_local(async move {
             let res = invoke_without_argument("get_head").await;
-            let res: Option<String> = serde_wasm_bindgen::from_value(res)
-                .expect("failed getting head");
+            let res: Option<Oid> = serde_wasm_bindgen::from_value(res)
+                .expect("cannot parse reponse");
             set_head.set(res);
         });
     });
@@ -203,10 +192,10 @@ pub fn HistoryPage() -> impl IntoView {
         <div class="main">
         {move || {
             let head = head.get();
-            let history = history.get();
+            let hg = hg.get();
 
             view! {
-                <graph::RenderGraph history=history head=head />
+                <RenderHistoryGraph history_graph=hg head=head />
             }
         }}
         </div>

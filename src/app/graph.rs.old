@@ -1,8 +1,6 @@
 use leptos::prelude::*;
 use std::collections::{HashSet, HashMap};
 
-use super::History;
-
 #[derive(Clone)]
 struct Node {
     x: f64,

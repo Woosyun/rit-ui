@@ -8,7 +8,14 @@ use std::{
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct WorkingDirectory(pub Option<PathBuf>);
+pub struct WorkingDirectory(Option<PathBuf>);
+impl std::ops::Deref for WorkingDirectory {
+    type Target = Option<PathBuf>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub fn workdir(
     wd: tauri::State<'_, Mutex<WorkingDirectory>>
 ) -> PathBuf {
@@ -22,6 +29,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            get_working_directory,
             is_repository_initialized,
             initialize_repository,
             read_workspace,

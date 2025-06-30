@@ -7,6 +7,14 @@ use tauri::Manager;
 use crate::WorkingDirectory;
 use serde::{Serialize, Deserialize};
 
+#[tauri::command]
+pub async fn get_working_directory(
+    wd: tauri::State<'_, Mutex<WorkingDirectory>>
+) -> rit::Result<Option<PathBuf>> {
+    let wd_lock = wd.lock().unwrap();
+    let wd = (*wd_lock).0.clone();
+    Ok(wd)
+}
 
 #[tauri::command]
 pub async fn set_working_directory(app: tauri::AppHandle) -> Option<PathBuf> {

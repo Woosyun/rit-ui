@@ -1,6 +1,9 @@
 mod graph;
 use graph::*;
 
+mod commit_dialog;
+use commit_dialog::*;
+
 use leptos::task::spawn_local;
 use leptos::{
     ev::{SubmitEvent, MouseEvent},
@@ -9,6 +12,10 @@ use leptos::{
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use std::path::PathBuf;
+use rit::{
+    commands::history::HistoryGraph,
+    prelude::Oid,
+};
 
 #[wasm_bindgen]
 extern "C" {
@@ -21,25 +28,37 @@ extern "C" {
 
 #[component]
 pub fn App() -> impl IntoView {
-    let (wd, set_wd) = signal(None::<PathBuf>);
+    let working_directory = LocalResource::new(|| async move {
+        let res = invoke_without_argument("get_working_directory").await;
+        let wd: Option<PathBuf> = serde_wasm_bindgen::from_value(res)
+            .expect("cannot parse from get_working_directory");
+        wd
+    });
 
     view! {
         <div id="app">
-        <Show
-            when=move || !wd.get().is_none()
-            fallback=move || view! {
-                <WorkingDirectorySelectionPage set_wd=set_wd />
+        <Transition fallback=move || view! {<h1> "loading..." </h1>}>
+        {move || Suspend::new(async move {
+            let wd = working_directory.await;
+            view! {
+                <Show
+                    when=move || wd.is_some()
+                    fallback=move || view! {
+                        <WorkingDirectorySelectionPage working_directory=working_directory />
+                    }
+                >
+                    <MainPage />
+                </Show>
             }
-        >
-            <MainPage />
-        </Show>
+        })}
+        </Transition>
         </div>
     }
 }
 
 #[component]
 pub fn WorkingDirectorySelectionPage(
-    set_wd: WriteSignal<Option<PathBuf>>,
+    working_directory: LocalResource<Option<PathBuf>>,
 ) -> impl IntoView {
     let open_explorer = move |ev: SubmitEvent| {
         ev.prevent_default();
@@ -47,9 +66,9 @@ pub fn WorkingDirectorySelectionPage(
         spawn_local(async move {
             let path = invoke_without_argument("set_working_directory")
                 .await;
-            let path: Option<PathBuf> = serde_wasm_bindgen::from_value(path).unwrap();
+            let _: Option<PathBuf> = serde_wasm_bindgen::from_value(path).unwrap();
 
-            set_wd.set(path);
+            working_directory.refetch();
         });
     };
 
@@ -61,52 +80,6 @@ pub fn WorkingDirectorySelectionPage(
                 </button>
             </form>
         </div>
-    }
-}
-
-#[component] 
-pub fn MainPage() -> impl IntoView {
-    let (init, set_init) = signal(false);
-    Effect::new(move || {
-        spawn_local(async move {
-            let res = invoke_without_argument("is_repository_initialized").await;
-            if let Ok(init) = serde_wasm_bindgen::from_value::<bool>(res) {
-                println!("invoked is_repository_initialized: {}", init);
-                set_init.set(init);
-            } else {
-                println!("somthing wrong with invoking");
-            }
-        });
-    });
-
-    view! {
-        <Show
-            when=move || init.get()
-            fallback=move || view! {
-                <UninitializedPage set_init=set_init/>
-            }
-        >
-            <Sidebar />
-            <HistoryPage />
-        </Show>
-    }
-}
-#[component] 
-pub fn UninitializedPage(set_init: WriteSignal<bool>) -> impl IntoView {
-    let on_click = move |ev: MouseEvent| {
-        ev.prevent_default();
-
-        spawn_local(async move {
-            let _ = invoke_without_argument("initialize_repository").await;
-
-            set_init.set(true);
-        });
-    };
-    
-    view! {
-        <button on:click=on_click>
-            "initalize repository"
-        </button>
     }
 }
 
@@ -122,18 +95,62 @@ pub enum EntryStatus {
     NotChanged,
 }
 #[component] 
-pub fn Sidebar() -> impl IntoView {
-    let (ws, set_ws) = signal(Vec::<Entry>::new());
-    Effect::new(move || {
-        spawn_local(async move {
-            let res = invoke_without_argument("read_workspace").await;
-            let res = serde_wasm_bindgen::from_value::<Vec<Entry>>(res)
-                .map_err(|e| e.to_string());
-            if let Ok(ws) = res {
-                set_ws.set(ws);
-            }
-        });
+pub fn MainPage() -> impl IntoView {
+    let head = LocalResource::new(|| async move {
+        let res = invoke_without_argument("get_head").await;
+        let head: Option<Oid> = serde_wasm_bindgen::from_value(res)
+            .expect("cannot parse head");
+        head
     });
+    let ws = LocalResource::new(|| async move {
+        let res = invoke_without_argument("read_workspace").await;
+        let ws: Vec<Entry> = serde_wasm_bindgen::from_value(res)
+            .expect("cannot parse workspace");
+        ws
+    });
+
+    view! {
+        <Transition fallback=move || view! { <h1>"loading..."</h1> }>
+            {move || Suspend::new(async move {
+                let h = head.await;
+                view! {
+                    <Show
+                        when=move || h.is_some()
+                        fallback=move || view! { <UninitializedPage head=head /> }
+                    >
+                        <Sidebar workspace=ws />
+                        <HistoryPage workspace=ws head=head />
+                    </Show>
+                }
+            })}
+        </Transition>
+    }
+}
+#[component] 
+pub fn UninitializedPage(
+    head: LocalResource<Option<Oid>>,
+) -> impl IntoView {
+    let on_click = move |ev: MouseEvent| {
+        ev.prevent_default();
+
+        spawn_local(async move {
+            let _ = invoke_without_argument("initialize_repository").await;
+
+            head.refetch();
+        });
+    };
+    
+    view! {
+        <button on:click=on_click>
+            "initalize repository"
+        </button>
+    }
+}
+
+#[component] 
+pub fn Sidebar(
+    workspace: LocalResource<Vec<Entry>>,
+) -> impl IntoView {
     let render_entry = move |entry: Entry| {
         let class_name = match entry.status {
             EntryStatus::Added => "file-item added-file",
@@ -152,52 +169,48 @@ pub fn Sidebar() -> impl IntoView {
 
     view! {
         <div class="sidebar">
-        {move || {
-            let ws = ws.get();
-            ws.into_iter()
-                .map(render_entry)
-                .collect_view()
-        }}
+        <Transition fallback=move || view! { <h1>"loading..."</h1> }>
+            {move || Suspend::new(async move {
+                let ws = workspace.await;
+
+                ws.into_iter()
+                    .map(render_entry)
+                    .collect_view()
+            })}
+        </Transition>
         </div>
     }
 }
 
 #[component]
-pub fn HistoryPage() -> impl IntoView {
-    use rit::{
-        commands::history::HistoryGraph,
-        prelude::Oid,
-    };
+pub fn HistoryPage(
+    workspace: LocalResource<Vec<Entry>>,
+    head: LocalResource<Option<Oid>>,
+) -> impl IntoView {
+    let hg = LocalResource::new(|| async move {
+        let res = invoke_without_argument("get_history").await;
+        let hg: HistoryGraph = serde_wasm_bindgen::from_value(res)
+            .expect("cannot parse history graph from resposne");
+        hg
+    });
 
-    let (hg, set_hg) = signal(HistoryGraph::new());
-    Effect::new(move || {
-        spawn_local(async move {
-            let res = invoke_without_argument("get_history").await;
-            let res: HistoryGraph = serde_wasm_bindgen::from_value(res)
-                .expect("cannot parse response");
-            set_hg.set(res);
-        });
-    });
-    let (head, set_head) = signal(None);
-    Effect::new(move || {
-        spawn_local(async move {
-            let res = invoke_without_argument("get_head").await;
-            let res: Option<Oid> = serde_wasm_bindgen::from_value(res)
-                .expect("cannot parse reponse");
-            set_head.set(res);
-        });
-    });
+    let refetch_history = move || {
+        hg.refetch();
+        head.refetch();
+        workspace.refetch();
+    };
+    let commit_dialog_ref: NodeRef<leptos::html::Dialog> = NodeRef::new();
 
     view! {
-        <div class="main">
-        {move || {
-            let head = head.get();
-            let hg = hg.get();
-
+        <Transition fallback=move || view! {<h1>"waiting..."</h1>}>
+        {move || Suspend::new(async move {
+            let hg = hg.await;
+            let head = head.await;
             view! {
-                <RenderHistoryGraph history_graph=hg head=head />
+                <RenderHistoryGraph history_graph=hg head=head commit_dialog_ref=commit_dialog_ref/>
             }
-        }}
-        </div>
+        })}
+        <CommitDialog dialog_ref=commit_dialog_ref refetch_history=refetch_history />
+        </Transition>
     }
 }

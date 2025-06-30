@@ -16,10 +16,15 @@ impl CommitPayLoad {
     }
 }
 #[component]
-pub fn CommitDialog(
+pub fn CommitDialog<F>(
     dialog_ref: NodeRef<leptos::html::Dialog>,
-) -> impl IntoView {
+    refetch_history: F,
+) -> impl IntoView 
+where
+    F: Fn() + 'static,
+{
     use leptos::ev::SubmitEvent;
+
     let (msg, set_msg) = signal("".to_string());
     let close = move |_| {
         dialog_ref
@@ -41,6 +46,7 @@ pub fn CommitDialog(
         dialog_ref
             .get().unwrap()
             .close();
+        refetch_history();
     };
     view! {
         <dialog class="dialog-box" node_ref=dialog_ref>

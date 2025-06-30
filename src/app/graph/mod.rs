@@ -1,8 +1,6 @@
 mod coordinates;
 use coordinates::*;
 
-mod commit_dialog;
-use commit_dialog::*;
 
 use rit::{
     prelude::Oid,
@@ -14,6 +12,7 @@ use leptos::prelude::*;
 pub fn RenderHistoryGraph(
     history_graph: HistoryGraph,
     head: Option<Oid>,
+    commit_dialog_ref: NodeRef<leptos::html::Dialog>
 ) -> impl IntoView {
     leptos::logging::log!("history graph: {:?}", &history_graph);
     let coordinates = Coordinates::from(&history_graph);
@@ -50,22 +49,19 @@ pub fn RenderHistoryGraph(
 
     let h = head.clone();
     leptos::logging::log!("{:?}", &h);
-    let dialog_ref: NodeRef<leptos::html::Dialog> = NodeRef::new();
     let workspace = move || match h {
         Some(head) => {
-            //error: commit이 있는 상태인데
-            //coordinates is empty && head is some.
             let parent = coordinates.get(&head).unwrap();
             let y = parent.1 + Coordinates::gap();
             view! {
-                <WorkspaceCircle x=parent.0 y=y commit_dialog_ref=dialog_ref/>
+                <WorkspaceCircle x=parent.0 y=y commit_dialog_ref=commit_dialog_ref/>
                 <Line from=*parent to=(parent.0, y) />
             }.into_any()
         },
         None => {
             let (x, y) = Coordinates::init();
             view! {
-                <WorkspaceCircle x=x y=y commit_dialog_ref=dialog_ref/>
+                <WorkspaceCircle x=x y=y commit_dialog_ref=commit_dialog_ref/>
             }.into_any()
         }
     };
@@ -77,7 +73,6 @@ pub fn RenderHistoryGraph(
             {edges()}
             {workspace()}
         </svg>
-        <CommitDialog dialog_ref=dialog_ref/>
     }
 }
 
@@ -112,7 +107,7 @@ pub fn WorkspaceCircle(
             cx={x}
             cy={y}
             r=20.0
-            fill="black"
+            fill="orange"
             on:click=on_click
         />
     }

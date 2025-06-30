@@ -165,14 +165,14 @@ pub fn Sidebar() -> impl IntoView {
 #[component]
 pub fn HistoryPage() -> impl IntoView {
     use rit::{
-        commands::history::*,
+        commands::history::HistoryGraph,
         prelude::Oid,
     };
 
     let (hg, set_hg) = signal(HistoryGraph::new());
     Effect::new(move || {
         spawn_local(async move {
-            let res = invoke_without_argument("read_entire_history").await;
+            let res = invoke_without_argument("get_history").await;
             let res: HistoryGraph = serde_wasm_bindgen::from_value(res)
                 .expect("cannot parse response");
             set_hg.set(res);

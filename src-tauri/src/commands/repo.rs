@@ -43,3 +43,14 @@ pub async fn get_head(
     let repo = Repository::build(&ws)?;
     repo.read_head()
 }
+
+#[tauri::command]
+pub async fn commit(
+    wd: tauri::State<'_, Mutex<WorkingDirectory>>,
+    msg: String,
+) -> Result<()> {
+    let workdir = workdir(wd);
+    let mut cmd = commit::Commit::build(workdir)?;
+    cmd.set_message(msg);
+    cmd.execute()
+}

@@ -1,6 +1,9 @@
-#![allow(unused)]
+mod coordinates;
+use coordinates::*;
 
-use std::collections::{HashSet, VecDeque, HashMap};
+mod commit_dialog;
+use commit_dialog::*;
+
 use rit::{
     prelude::Oid,
     commands::history::HistoryGraph,
@@ -12,26 +15,31 @@ pub fn RenderHistoryGraph(
     history_graph: HistoryGraph,
     head: Option<Oid>,
 ) -> impl IntoView {
+    leptos::logging::log!("history graph: {:?}", &history_graph);
     let coordinates = Coordinates::from(&history_graph);
+
+    leptos::logging::log!("{:?}", coordinates);
     
     let t = coordinates.clone();
     let nodes = move || t
         .iter()
-        .map(|(_, (x, y))| {
+        .map(|(_oid, (x, y))| {
             view! {
-                <Circle x=*x y=*y />
+                <Circle x=*x y=*y/>
             }
         })
         .collect_view();
+
+    let coord = coordinates.clone();
     let edges = move || history_graph
         .children()
         .iter()
         .map(|(parent, children)| {
-            let parent_xy = coordinates.get(parent).unwrap();
+            let parent_xy = coord.get(parent).unwrap();
             children
                 .iter()
                 .map(|child| {
-                    let child_xy = coordinates.get(child).unwrap();
+                    let child_xy = coord.get(child).unwrap();
                     view! {
                         <Line from=*parent_xy to=*child_xy />
                     }
@@ -40,24 +48,44 @@ pub fn RenderHistoryGraph(
         })
         .collect_view();
 
-    view! {
-        {move || match head {
-            Some(_) => {
-                view! {
-                    {nodes()}
-                    {edges()}
-                }.into_any()
-            },
-            None => {
-                view! {
-                    <h1>"No History Found"</h1>
-                }
+    let h = head.clone();
+    leptos::logging::log!("{:?}", &h);
+    let dialog_ref: NodeRef<leptos::html::Dialog> = NodeRef::new();
+    let workspace = move || match h {
+        Some(head) => {
+            //error: commit이 있는 상태인데
+            //coordinates is empty && head is some.
+            let parent = coordinates.get(&head).unwrap();
+            let y = parent.1 + Coordinates::gap();
+            view! {
+                <WorkspaceCircle x=parent.0 y=y commit_dialog_ref=dialog_ref/>
+                <Line from=*parent to=(parent.0, y) />
             }.into_any()
-        }}
+        },
+        None => {
+            let (x, y) = Coordinates::init();
+            view! {
+                <WorkspaceCircle x=x y=y commit_dialog_ref=dialog_ref/>
+            }.into_any()
+        }
+    };
+
+
+    view! {
+        <svg width="100%" height="100%" style="border: 1px solid #ccc;">
+            {nodes()}
+            {edges()}
+            {workspace()}
+        </svg>
+        <CommitDialog dialog_ref=dialog_ref/>
     }
 }
+
 #[component]
-pub fn Circle(x: usize, y: usize) -> impl IntoView {
+pub fn Circle(
+    x: usize, 
+    y: usize,
+) -> impl IntoView {
     view! {
         <circle 
             cx={x}
@@ -67,6 +95,30 @@ pub fn Circle(x: usize, y: usize) -> impl IntoView {
         />
     }
 }
+
+#[component]
+pub fn WorkspaceCircle(
+    x: usize,
+    y: usize,
+    commit_dialog_ref: NodeRef<leptos::html::Dialog>,
+) -> impl IntoView {
+    let on_click = move |_| {
+        commit_dialog_ref
+            .get().unwrap()
+            .show_modal().unwrap();
+    };
+    view! {
+        <circle 
+            cx={x}
+            cy={y}
+            r=20.0
+            fill="black"
+            on:click=on_click
+        />
+    }
+}
+
+
 #[component]
 pub fn Line(from: (usize, usize), to: (usize, usize)) -> impl IntoView {
     view! {
@@ -78,51 +130,5 @@ pub fn Line(from: (usize, usize), to: (usize, usize)) -> impl IntoView {
             stroke="black"
             stroke-width="2"
         />
-    }
-}
-
-#[derive(Clone)]
-pub struct Coordinates(HashMap<Oid, (usize, usize)>);
-impl Coordinates {
-    pub fn from(hg: &HistoryGraph) -> Self {
-        let mut nodes = Coordinates(HashMap::new());
-        let mut next_x = 0;
-        for root in hg.roots() {
-            let next_x = std::cmp::max(
-                next_x + Self::gap(),
-                nodes.grant(root, (next_x, 0), hg)
-            );
-        }
-        nodes
-    }
-    fn gap() -> usize {
-        50
-    }
-    fn grant(&mut self, parent: &Oid, xy: (usize, usize), hg: &HistoryGraph) -> usize {
-        self.insert(parent.clone(), xy);
-
-        let mut next_x = xy.0 + Self::gap();
-        if let Some(children) = hg.children().get(parent) {
-            for child in children {
-                next_x = std::cmp::max(
-                    next_x + Self::gap(), 
-                    self.grant(child, (next_x, xy.1+Self::gap()), hg)
-                );
-            }
-        }
-
-        next_x
-    }
-}
-
-impl std::ops::Deref for Coordinates {
-    type Target = HashMap<Oid, (usize, usize)>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl std::ops::DerefMut for Coordinates {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }

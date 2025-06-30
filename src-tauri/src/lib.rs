@@ -27,6 +27,8 @@ pub fn run() {
             read_workspace,
             set_working_directory,
             get_history,
+            get_head,
+            commit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

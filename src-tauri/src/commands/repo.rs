@@ -15,6 +15,7 @@ pub async fn initialize_repository(
     cmd.execute()
 }
 
+/*
 #[tauri::command]
 pub async fn is_repository_initialized(
     wd: tauri::State<'_, Mutex<WorkingDirectory>>
@@ -24,6 +25,7 @@ pub async fn is_repository_initialized(
     Ok(cmd.repository_status()
         .is_repository_initialized())
 }
+*/
 
 #[tauri::command]
 pub async fn get_history(

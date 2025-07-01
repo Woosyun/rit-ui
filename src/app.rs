@@ -1,9 +1,6 @@
 mod graph;
 use graph::*;
 
-mod commit_dialog;
-use commit_dialog::*;
-
 use leptos::task::spawn_local;
 use leptos::{
     ev::{SubmitEvent, MouseEvent},
@@ -94,6 +91,7 @@ pub enum EntryStatus {
     Modified,
     NotChanged,
 }
+
 #[component] 
 pub fn MainPage() -> impl IntoView {
     let head = LocalResource::new(|| async move {
@@ -108,21 +106,34 @@ pub fn MainPage() -> impl IntoView {
             .expect("cannot parse workspace");
         ws
     });
+    let hg = LocalResource::new(|| async move {
+        let res = invoke_without_argument("get_history").await;
+        let hg: HistoryGraph = serde_wasm_bindgen::from_value(res)
+            .expect("cannot parse history graph from resposne");
+        hg
+    });
+
+    let callback_after_commit = move || {
+        hg.refetch();
+        head.refetch();
+        ws.refetch();
+    };
 
     view! {
         <Transition fallback=move || view! { <h1>"loading..."</h1> }>
-            {move || Suspend::new(async move {
-                let h = head.await;
-                view! {
-                    <Show
-                        when=move || h.is_some()
-                        fallback=move || view! { <UninitializedPage head=head /> }
-                    >
-                        <Sidebar workspace=ws />
-                        <HistoryPage workspace=ws head=head />
-                    </Show>
-                }
-            })}
+        {move || Suspend::new(async move {
+            let h = head.await;
+
+            view! {
+                <Show
+                    when=move || h.is_some()
+                    fallback=move || view! { <UninitializedPage head=head /> }
+                >
+                    <Sidebar workspace=ws />
+                    <RenderHistoryGraph history_graph=hg head=head callback_after_commit=callback_after_commit/>
+                </Show>
+            }
+        })}
         </Transition>
     }
 }
@@ -179,38 +190,5 @@ pub fn Sidebar(
             })}
         </Transition>
         </div>
-    }
-}
-
-#[component]
-pub fn HistoryPage(
-    workspace: LocalResource<Vec<Entry>>,
-    head: LocalResource<Option<Oid>>,
-) -> impl IntoView {
-    let hg = LocalResource::new(|| async move {
-        let res = invoke_without_argument("get_history").await;
-        let hg: HistoryGraph = serde_wasm_bindgen::from_value(res)
-            .expect("cannot parse history graph from resposne");
-        hg
-    });
-
-    let refetch_history = move || {
-        hg.refetch();
-        head.refetch();
-        workspace.refetch();
-    };
-    let commit_dialog_ref: NodeRef<leptos::html::Dialog> = NodeRef::new();
-
-    view! {
-        <Transition fallback=move || view! {<h1>"waiting..."</h1>}>
-        {move || Suspend::new(async move {
-            let hg = hg.await;
-            let head = head.await;
-            view! {
-                <RenderHistoryGraph history_graph=hg head=head commit_dialog_ref=commit_dialog_ref/>
-            }
-        })}
-        <CommitDialog dialog_ref=commit_dialog_ref refetch_history=refetch_history />
-        </Transition>
     }
 }

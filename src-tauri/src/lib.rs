@@ -30,10 +30,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_working_directory,
-            is_repository_initialized,
-            initialize_repository,
-            read_workspace,
             set_working_directory,
+            read_workspace,
+            //is_repository_initialized,
+            initialize_repository,
             get_history,
             get_head,
             commit,

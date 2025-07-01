@@ -1,36 +1,62 @@
 mod coordinates;
 use coordinates::*;
 
+mod svg;
+use svg::*;
+
+mod commit_dialog;
+use commit_dialog::*;
+
+mod node_menu;
+use node_menu::*;
 
 use rit::{
     prelude::Oid,
     commands::history::HistoryGraph,
 };
-use leptos::prelude::*;
+use leptos::{
+    prelude::*,
+    ev::MouseEvent,
+    html::Dialog,
+};
 
 #[component]
-pub fn RenderHistoryGraph(
-    history_graph: HistoryGraph,
-    head: Option<Oid>,
-    commit_dialog_ref: NodeRef<leptos::html::Dialog>
-) -> impl IntoView {
-    leptos::logging::log!("history graph: {:?}", &history_graph);
-    let coordinates = Coordinates::from(&history_graph);
+pub fn RenderHistoryGraph<F>(
+    history_graph: LocalResource<HistoryGraph>,
+    head: LocalResource<Option<Oid>>,
+    callback_after_commit: F
+) -> impl IntoView 
+where
+    F: Fn() + 'static,
+{
+    let node_menu_ref: NodeRef<Dialog> = NodeRef::new();
+    let commit_dialog_ref: NodeRef<Dialog> = NodeRef::new();
+    let create_branch_dialog_ref: NodeRef<Dialog> = NodeRef::new();
 
-    leptos::logging::log!("{:?}", coordinates);
+    let (node_type, set_node_type) = signal(NodeType::Revision);
+
+    let on_contextmenu_node = move |ev: MouseEvent, node_type: NodeType| {
+        ev.prevent_default();
+        set_node_type.set(node_type);
+        leptos::logging::log!("clicked: {}", ev.button());
+        //2 => right click
+        if ev.button() == 2 {
+            node_menu_ref
+                .get().unwrap()
+                .show_modal().unwrap();
+        }
+    };
     
-    let t = coordinates.clone();
-    let nodes = move || t
+    let nodes = move |coordinates: &Coordinates| coordinates
         .iter()
         .map(|(_oid, (x, y))| {
             view! {
-                <Circle x=*x y=*y/>
+                <Circle x=*x y=*y on_contextmenu=on_contextmenu_node node_type=NodeType::Revision/>
             }
         })
         .collect_view();
 
-    let coord = coordinates.clone();
-    let edges = move || history_graph
+    let edges = move |hg: HistoryGraph, coord: &Coordinates| hg
         .children()
         .iter()
         .map(|(parent, children)| {
@@ -47,83 +73,63 @@ pub fn RenderHistoryGraph(
         })
         .collect_view();
 
-    let h = head.clone();
-    leptos::logging::log!("{:?}", &h);
-    let workspace = move || match h {
-        Some(head) => {
-            let parent = coordinates.get(&head).unwrap();
-            let y = parent.1 + Coordinates::gap();
-            view! {
-                <WorkspaceCircle x=parent.0 y=y commit_dialog_ref=commit_dialog_ref/>
-                <Line from=*parent to=(parent.0, y) />
-            }.into_any()
-        },
-        None => {
-            let (x, y) = Coordinates::init();
-            view! {
-                <WorkspaceCircle x=x y=y commit_dialog_ref=commit_dialog_ref/>
-            }.into_any()
+    let workspace = move |head: &Option<Oid>, coordinates: &Coordinates| {
+        let (parent, child) = match head {
+            Some(head) => {
+                let parent = coordinates.get(head).unwrap();
+                let child = (parent.0, parent.1 + Coordinates::gap());
+                (*parent, child)
+            },
+            None => {
+                (Coordinates::init(), Coordinates::init())
+            }
+        };
+
+        view! {
+            <Circle x=child.0 y=child.1 on_contextmenu=on_contextmenu_node node_type=NodeType::Workspace />
+            <Line from=parent to=child />
         }
     };
 
 
     view! {
         <svg width="100%" height="100%" style="border: 1px solid #ccc;">
-            {nodes()}
-            {edges()}
-            {workspace()}
+        <Transition fallback=move || view! { <h1>"loading..."</h1> }>
+        {move || Suspend::new(async move {
+            let history_graph = history_graph.await;
+            let head = head.await;
+            let coordinates = Coordinates::from(&history_graph);
+
+            view! {
+                {nodes(&coordinates)}
+                {edges(history_graph, &coordinates)}
+                {workspace(&head, &coordinates)}
+            }
+        })}
+        </Transition>
         </svg>
+
+        <NodeMenu 
+            node_type=node_type
+            dialog_ref=node_menu_ref 
+            commit_dialog_ref=commit_dialog_ref
+            create_branch_dialog_ref=create_branch_dialog_ref
+        />
+        <CommitDialog dialog_ref=commit_dialog_ref callback_after_commit=callback_after_commit />
+        //<CreateBranchDialog dialog_ref=create_branch_dialog_ref />
     }
 }
 
-#[component]
-pub fn Circle(
-    x: usize, 
-    y: usize,
-) -> impl IntoView {
-    view! {
-        <circle 
-            cx={x}
-            cy={y}
-            r=20.0
-            fill="black"
-        />
-    }
+#[derive(Clone)]
+pub enum NodeType {
+    Workspace,
+    Revision,
 }
-
-#[component]
-pub fn WorkspaceCircle(
-    x: usize,
-    y: usize,
-    commit_dialog_ref: NodeRef<leptos::html::Dialog>,
-) -> impl IntoView {
-    let on_click = move |_| {
-        commit_dialog_ref
-            .get().unwrap()
-            .show_modal().unwrap();
-    };
-    view! {
-        <circle 
-            cx={x}
-            cy={y}
-            r=20.0
-            fill="orange"
-            on:click=on_click
-        />
-    }
-}
-
-
-#[component]
-pub fn Line(from: (usize, usize), to: (usize, usize)) -> impl IntoView {
-    view! {
-        <line 
-            x1={from.0}
-            y1={from.1}
-            x2={to.0}
-            y2={to.1}
-            stroke="black"
-            stroke-width="2"
-        />
+impl NodeType {
+    pub fn color(&self) -> &'static str {
+        match self {
+            NodeType::Workspace => "orange",
+            NodeType::Revision => "gray",
+        }
     }
 }

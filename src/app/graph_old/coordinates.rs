@@ -10,8 +10,8 @@ impl Coordinates {
     pub fn from(hg: &HistoryGraph) -> Self {
         let mut nodes = Coordinates(HashMap::new());
         let (mut next_x, init_y) = Coordinates::init();
-        for root in hg.roots() {
-            let tmp = nodes.grant(root, (next_x, init_y), hg);
+        for (_, leaf) in hg.leaves() {
+            let tmp = nodes.recursively_assign_coordinate(leaf, (next_x, init_y), hg);
             next_x = std::cmp::max(
                 next_x + Self::gap(),
                 tmp
@@ -25,13 +25,13 @@ impl Coordinates {
     pub fn init() -> (usize, usize) {
         (50, 50)
     }
-    fn grant(&mut self, parent: &Oid, xy: (usize, usize), hg: &HistoryGraph) -> usize {
-        self.insert(parent.clone(), xy);
+    fn recursively_assign_coordinate(&mut self, child: &Oid, xy: (usize, usize), hg: &HistoryGraph) -> usize {
+        self.insert(child.clone(), xy);
 
         let mut next_x = xy.0;
-        if let Some(children) = hg.children().get(parent) {
-            for child in children {
-                let tmp = self.grant(child, (next_x, xy.1+Self::gap()), hg);
+        if let Some(parents) = hg.parents().get(child) {
+            for parent in parents {
+                let tmp = self.recursively_assign_coordinate(parent, (next_x, xy.1+Self::gap()), hg);
                 next_x = std::cmp::max(
                     next_x + Self::gap(), 
                     tmp

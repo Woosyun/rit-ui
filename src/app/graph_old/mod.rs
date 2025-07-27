@@ -10,6 +10,9 @@ use commit_dialog::*;
 mod node_menu;
 use node_menu::*;
 
+mod create_branch_dialog;
+use create_branch_dialog::*;
+
 use rit::{
     prelude::Oid,
     commands::history::HistoryGraph,
@@ -21,24 +24,19 @@ use leptos::{
 };
 
 #[component]
-pub fn RenderHistoryGraph<F>(
+pub fn RenderHistoryGraph(
     history_graph: LocalResource<HistoryGraph>,
     head: LocalResource<Option<Oid>>,
-    callback_after_commit: F
-) -> impl IntoView 
-where
-    F: Fn() + 'static,
-{
+) -> impl IntoView {
     let node_menu_ref: NodeRef<Dialog> = NodeRef::new();
     let commit_dialog_ref: NodeRef<Dialog> = NodeRef::new();
     let create_branch_dialog_ref: NodeRef<Dialog> = NodeRef::new();
 
-    let (node_type, set_node_type) = signal(NodeType::Revision);
+    let (node_type, set_node_type) = signal(NodeType::Workspace);
 
     let on_contextmenu_node = move |ev: MouseEvent, node_type: NodeType| {
         ev.prevent_default();
         set_node_type.set(node_type);
-        leptos::logging::log!("clicked: {}", ev.button());
         //2 => right click
         if ev.button() == 2 {
             node_menu_ref
@@ -49,35 +47,40 @@ where
     
     let nodes = move |coordinates: &Coordinates| coordinates
         .iter()
-        .map(|(_oid, (x, y))| {
+        .map(|(oid, (x, y))| {
             view! {
-                <Circle x=*x y=*y on_contextmenu=on_contextmenu_node node_type=NodeType::Revision/>
+                <Circle x=*x y=*y on_contextmenu=on_contextmenu_node node_type=NodeType::Revision(oid.clone())/>
             }
         })
         .collect_view();
 
-    let edges = move |hg: HistoryGraph, coord: &Coordinates| hg
-        .children()
+    let edges = move |hg: &HistoryGraph, coord: &Coordinates| hg
+        .parents()
         .iter()
-        .map(|(parent, children)| {
-            let parent_xy = coord.get(parent).unwrap();
-            children
+        .map(|(child, parents)| {
+            let child_xy = coord.get(child).unwrap();
+            parents
                 .iter()
-                .map(|child| {
-                    let child_xy = coord.get(child).unwrap();
+                .map(|parent| {
+                    let parent_xy = coord.get(parent).unwrap();
                     view! {
-                        <Line from=*parent_xy to=*child_xy />
+                        <Line from=*child_xy to=*parent_xy />
                     }
                 })
                 .collect_view()
         })
         .collect_view();
 
-    let workspace = move |head: &Option<Oid>, coordinates: &Coordinates| {
-        let (parent, child) = match head {
+    let workspace = move |hg: &HistoryGraph, head: &Option<Oid>, coordinates: &Coordinates| {
+        let (child, parent) = match head {
             Some(head) => {
                 let parent = coordinates.get(head).unwrap();
-                let child = (parent.0, parent.1 + Coordinates::gap());
+                let number_of_children = hg
+                    .parents()
+                    .get(head)
+                    .map(|parents| parents.len())
+                    .unwrap_or(0);
+                let child = (parent.0 + Coordinates::gap()*number_of_children, parent.1 + Coordinates::gap());
                 (*parent, child)
             },
             None => {
@@ -102,8 +105,8 @@ where
 
             view! {
                 {nodes(&coordinates)}
-                {edges(history_graph, &coordinates)}
-                {workspace(&head, &coordinates)}
+                {edges(&history_graph, &coordinates)}
+                {workspace(&history_graph, &head, &coordinates)}
             }
         })}
         </Transition>
@@ -115,21 +118,21 @@ where
             commit_dialog_ref=commit_dialog_ref
             create_branch_dialog_ref=create_branch_dialog_ref
         />
-        <CommitDialog dialog_ref=commit_dialog_ref callback_after_commit=callback_after_commit />
-        //<CreateBranchDialog dialog_ref=create_branch_dialog_ref />
+        <CommitDialog dialog_ref=commit_dialog_ref />
+        <CreateBranchDialog dialog_ref=create_branch_dialog_ref />
     }
 }
 
 #[derive(Clone)]
 pub enum NodeType {
     Workspace,
-    Revision,
+    Revision(Oid),
 }
 impl NodeType {
     pub fn color(&self) -> &'static str {
         match self {
             NodeType::Workspace => "orange",
-            NodeType::Revision => "gray",
+            NodeType::Revision(_) => "gray",
         }
     }
 }

@@ -16,13 +16,9 @@ impl CommitPayLoad {
     }
 }
 #[component]
-pub fn CommitDialog<F>(
+pub fn CommitDialog(
     dialog_ref: NodeRef<leptos::html::Dialog>,
-    callback_after_commit: F,
-) -> impl IntoView 
-where
-    F: Fn() + 'static,
-{
+) -> impl IntoView {
     use leptos::ev::SubmitEvent;
 
     let (msg, set_msg) = signal("".to_string());
@@ -31,9 +27,7 @@ where
             .get().unwrap()
             .close();
     };
-    let on_submit = move |ev: SubmitEvent| {
-        ev.prevent_default();
-
+    let on_submit = move |_ev: SubmitEvent| {
         let msg = msg.get();
         let f = format!("commit message entered: {}", msg);
         leptos::logging::log!("{}", f);
@@ -43,10 +37,6 @@ where
             let _: () = serde_wasm_bindgen::from_value(res)
                 .expect("cannot commit");
         });
-        dialog_ref
-            .get().unwrap()
-            .close();
-        callback_after_commit();
     };
     view! {
         <dialog class="dialog-box" node_ref=dialog_ref>

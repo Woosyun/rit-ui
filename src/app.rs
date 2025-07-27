@@ -1,5 +1,4 @@
-mod graph;
-use graph::*;
+mod history;
 
 use leptos::task::spawn_local;
 use leptos::{
@@ -112,31 +111,32 @@ pub fn MainPage() -> impl IntoView {
             .expect("cannot parse history graph from resposne");
         hg
     });
-
-    let callback_after_commit = move || {
-        hg.refetch();
-        head.refetch();
-        ws.refetch();
-    };
+    let is_repository_initialized = LocalResource::new(|| async move {
+        let res = invoke_without_argument("is_repository_initialized").await;
+        let init: bool = serde_wasm_bindgen::from_value(res)
+            .expect("cannot parse is_repository_initialized");
+        init
+    });
 
     view! {
         <Transition fallback=move || view! { <h1>"loading..."</h1> }>
         {move || Suspend::new(async move {
-            let h = head.await;
+            let init = is_repository_initialized.await;
 
             view! {
                 <Show
-                    when=move || h.is_some()
+                    when=move || init
                     fallback=move || view! { <UninitializedPage head=head /> }
                 >
                     <Sidebar workspace=ws />
-                    <RenderHistoryGraph history_graph=hg head=head callback_after_commit=callback_after_commit/>
+                    <history::Page history_graph=hg head=head/>
                 </Show>
             }
         })}
         </Transition>
     }
 }
+
 #[component] 
 pub fn UninitializedPage(
     head: LocalResource<Option<Oid>>,

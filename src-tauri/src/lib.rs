@@ -32,11 +32,13 @@ pub fn run() {
             get_working_directory,
             set_working_directory,
             read_workspace,
-            //is_repository_initialized,
+            is_repository_initialized,
             initialize_repository,
             get_history,
             get_head,
             commit,
+            checkout_to_branch,
+            checkout_to_revision,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

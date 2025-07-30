@@ -2,7 +2,7 @@ mod history;
 
 use leptos::task::spawn_local;
 use leptos::{
-    ev::{SubmitEvent, MouseEvent},
+    ev::{SubmitEvent},
     prelude::*
 };
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ use wasm_bindgen::prelude::*;
 use std::path::PathBuf;
 use rit::{
     commands::history::HistoryGraph,
-    prelude::Oid,
+    prelude::{Oid, Head},
 };
 
 #[wasm_bindgen]
@@ -95,7 +95,7 @@ pub enum EntryStatus {
 pub fn MainPage() -> impl IntoView {
     let head = LocalResource::new(|| async move {
         let res = invoke_without_argument("get_head").await;
-        let head: Option<Oid> = serde_wasm_bindgen::from_value(res)
+        let head: Head = serde_wasm_bindgen::from_value(res)
             .expect("cannot parse head");
         head
     });
@@ -122,11 +122,12 @@ pub fn MainPage() -> impl IntoView {
         <Transition fallback=move || view! { <h1>"loading..."</h1> }>
         {move || Suspend::new(async move {
             let init = is_repository_initialized.await;
+            //let hg = hg.await;
 
             view! {
                 <Show
                     when=move || init
-                    fallback=move || view! { <UninitializedPage head=head /> }
+                    fallback=move || view! { <UninitializedPage /> }
                 >
                     <Sidebar workspace=ws />
                     <history::Page history_graph=hg head=head/>
@@ -138,23 +139,21 @@ pub fn MainPage() -> impl IntoView {
 }
 
 #[component] 
-pub fn UninitializedPage(
-    head: LocalResource<Option<Oid>>,
-) -> impl IntoView {
-    let on_click = move |ev: MouseEvent| {
+pub fn UninitializedPage() -> impl IntoView {
+    let on_submit = move |ev: SubmitEvent| {
         ev.prevent_default();
 
         spawn_local(async move {
-            let _ = invoke_without_argument("initialize_repository").await;
-
-            head.refetch();
+            let res = invoke_without_argument("initialize_repository").await;
+            let _: () = serde_wasm_bindgen::from_value(res)
+                .expect("cannot initialize repository");
         });
     };
     
     view! {
-        <button on:click=on_click>
-            "initalize repository"
-        </button>
+        <form on:submit=on_submit>
+            <input type="submit" value="initialize repository" />
+        </form>
     }
 }
 

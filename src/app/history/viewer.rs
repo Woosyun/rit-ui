@@ -1,134 +1,173 @@
-use std::collections::{ HashMap, BinaryHeap};
+use std::collections::{HashSet, HashMap, BinaryHeap};
 use rit::{
     commands::history::HistoryGraph,
-    repository::Oid,
+    repository::{Oid, Commit},
 };
-use leptos::prelude::*;
 
-#[derive(Clone)]
-pub struct HistoryViewer {
-    nodes: HashMap<Oid, Node>,
+#[derive(Clone, Debug)]
+pub struct HistoryViewer<'a> {
+    pub nodes: HashMap<Oid, Node>,
+    pub edges: HashMap<&'a Oid, HashSet<&'a Oid>>,
 }
-impl HistoryViewer {
-    pub fn from(hg: &HistoryGraph) -> Self {
-        let mut bts_que = BinaryHeap::new();
+
+//todo: because of workspace node, parent -> children workflow is needed
+//1. Assign xs to nodes base on branch->root->commit->ctime. Remember roots?
+//2. Assign ys to nodes base on commit->ctime
+
+//todo: find workspace node
+
+impl<'a> HistoryViewer<'a> {
+    pub fn from(hg: &'a HistoryGraph) -> Self {
+        let mut edges: HashMap<&'a Oid, HashSet<&'a Oid>> = HashMap::new();
+        let mut nodes: HashMap<Oid, Node> = HashMap::new();
+
+        let mut branches: HashMap<&Oid, &str> = HashMap::new();
+        let mut roots: HashSet<&Oid> = HashSet::new();
+        //set oid->branch
         for (branch_name, branch) in hg.branches() {
-            let (ctime, oid, parent_oid, msg) = hg.commits()
-                .get(branch.leaf())
-                .map(|commit| (commit.ctime(), branch.leaf(), commit.parents().get(0).unwrap(), commit.message()))
-                .unwrap();
-            let temp = BranchToSort::from(branch_name, ctime, oid, parent_oid, msg);
-            bts_que.push(temp);
+            let mut next_oid = Some(branch.leaf());
+            while let Some(oid) = next_oid {
+                if oid == branch.root() && branch_name != "main" {
+                    roots.insert(oid);
+                    break;
+                }
+
+                branches.insert(oid, branch_name);
+                next_oid = hg.commits()
+                    .get(oid).unwrap()
+                    .parents().get(0);
+            }
         }
 
-        let mut hr = HistoryReader::new();
-        let mut nodes = HashMap::new();
-        while let Some(BranchToSort{name, oid, parent_oid, message, ..}) = bts_que.pop() {
-            //create new node and store
-            let new_node = hr.create_node(name, message);
-            nodes.insert(oid.clone(), new_node);
+        //make edges(parent -> children)
+        for (child, commit) in hg.commits() {
+            for parent in commit.parents() {
+                edges.entry(parent)
+                    .or_default()
+                    .insert(child);
+            }
+        }
 
-            //if parent commit is same as branch -> root, finish
-            if name != "main" && parent_oid == hg.branches().get(name).unwrap().root() {
-                //root is on a other branch
+        let mut que: BinaryHeap<BranchToSort> = BinaryHeap::new();
+        //init
+        for root in roots {
+            let commit = hg.commits()
+                .get(root).unwrap();
+            let bts = BranchToSort::from(root, commit.ctime());
+            que.push(bts);
+        }
+        //assign x and y to node
+        let mut coord = Coordinator::new();
+        while let Some(BranchToSort{oid, ..}) = que.pop() {
+            if nodes.get(oid).is_some() {
                 continue;
             }
 
-            //get parent commit
-            let (ctime, oid, parent_oid, msg) = hg.commits()
-                .get(parent_oid)
-                .map(|commit| (commit.ctime(), parent_oid, commit.parents().get(0).unwrap(), commit.message()))
-                .unwrap();
+            //create node
+            let branch_name = branches.get(oid).unwrap();
+            let (x, y) = coord.assign(branch_name);
+            let commit = hg.commits().get(oid).unwrap();
+            let node = Node::from(x, y, oid, commit);
+            nodes.insert(oid.clone(), node);
 
-            //add bts to queue
-            bts_que.push(BranchToSort::from(name, ctime, oid, parent_oid, msg));
+            if let Some(child_oids) = edges.get(oid) {
+                for child_oid in child_oids {
+                    let child_ctime = hg.commits()
+                        .get(*child_oid).unwrap()
+                        .ctime();
+
+                    let new_bts = BranchToSort::from(child_oid, child_ctime);
+                    que.push(new_bts);
+                }
+            }
         }
 
         Self {
-            nodes: HashMap::new(),
+            nodes,
+            edges,
         }
     }
+    pub fn nodes(&self) -> &HashMap<Oid, Node> {
+        &self.nodes
+    }
 }
+struct Coordinator {
+    xs: HashMap<String, u32>, // branch -> x
+    max_x: u32,
+    y: u32,
+}
+impl Coordinator {
+    fn new() -> Self {
+        Self {
+            xs: HashMap::new(),
+            max_x: 0,
+            y: 0,
+        }
+    }
+    fn assign(&mut self, branch_name: &str) -> (u32, u32) {
+        let x = self.xs
+            .entry(branch_name.to_string())
+            .or_insert_with(|| {
+                self.max_x += 1;
+                self.max_x
+            })
+            .clone();
+        self.y += 1;
 
-impl IntoRender for HistoryViewer {
-    type Output = AnyView;
-
-    fn into_render(self) -> Self::Output {
-        view! {
-            <h1>"hello world"</h1>
-        }.into_any()
+        (x, self.y)
     }
 }
 
-#[derive(PartialEq, Eq)]
 struct BranchToSort<'a> {
-    name: &'a str,
-    ctime: u64,
     oid: &'a Oid,
-    parent_oid: &'a Oid,
-    message: &'a str,
+    ctime: u64,
 }
 impl<'a> BranchToSort<'a> {
-    fn from(name: &'a str, ctime: u64, oid: &'a Oid, parent_oid: &'a Oid, message: &'a str) -> Self {
+    fn from(oid: &'a Oid, ctime: u64) -> Self {
         Self {
-            name,
-            ctime,
             oid,
-            parent_oid,
-            message,
+            ctime,
         }
     }
 }
+//todo: unimplement commit->eq
+impl<'a> PartialEq for BranchToSort<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ctime == other.ctime
+    }
+}
+impl<'a> Eq for BranchToSort<'a> {}
 impl<'a> PartialOrd for BranchToSort<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(other.ctime.cmp(&self.ctime))
+        Some(self.ctime.cmp(&other.ctime))
     }
 }
 impl<'a> Ord for BranchToSort<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.ctime.cmp(&self.ctime)
+        self.ctime.cmp(&other.ctime)
     }
 }
 
-#[derive(Default)]
-struct HistoryReader {
-    xs: HashMap<String, u32>,
-    x: u32,
-    y: u32,
-}
-impl HistoryReader {
-    fn new() -> Self {
-        Self::default()
-    }
-    fn gap() -> u32 {
-        50
-    }
-    fn create_node(&mut self, branch_name: &str, commit_message: &str) -> Node {
-        let x = if let Some(x) = self.xs.get(branch_name) {
-            x
-        } else {
-            self.x += Self::gap();
-            self.xs.insert(branch_name.to_string(), self.x);
-            &self.x
-        };
-        let y = self.y;
-        self.y += Self::gap();
-
-        Node::from(*x, y, commit_message)
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Node {
-    x: u32,
-    y: u32,
-    commit_message: String,
+    pub x: u32,
+    pub y: u32,
+    pub oid: Oid,
+    pub commit: Commit,
 }
 impl Node {
-    fn from(x: u32, y: u32, commit_message: &str) -> Self {
+    fn new() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            //todo: oid and commit?
+        }
+    }
+    fn from(x: u32, y: u32, oid: &Oid, commit: &Commit) -> Self {
         Self {
             x,y,
-            commit_message: commit_message.to_string(),
+            oid: oid.clone(),
+            commit: commit.clone(),
         }
     }
 }
